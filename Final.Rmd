@@ -1,0 +1,359 @@
+---
+title: "Using Machine Learning to Diagnose Diabetes"
+author: "Alan Feria"
+date: "Sept, 17 2o23"
+toc: true
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+### 0. Abstract
+
+Diabetes is more prevalent among the Pima Indian tribe of southern Arizona than any other population globally(1). This paper demonstrates the accurate diagnosis of diabetes in Pima women by optimizing parameters for three machine learning algorithms: Random Forest decision trees, a Support Vector Machine (SVM), and a Multilayer Perceptron (MLP) artificial neural network (ANN). These results underscore the potential of machine learning as a valuable tool for assisting doctors in disease diagnosis.
+
+## 1. Introduction
+
+This study explores the application of machine learning in the field of medicine. Can statistical learning algorithms aid doctors in making accurate diagnoses and informed decisions about patient health? To answer this question, we trained three distinct machine learning algorithms—Random Forest decision trees, a Support Vector Machine (SVM), and a Multilayer Perceptron (MLP) artificial neural network—using data on diabetes occurrences in Pima Indian Women. All analyses were conducted using the R statistical computing software package within the RStudio integrated development environment. Our findings indicate that all three algorithms achieved a high success rate in correctly diagnosing diabetes in Pima women, providing support for the hypothesis that machine learning has a role in a doctor's toolkit.
+
+### 1.1 About the Data
+
+The data on diabetes incidence in Pima women used in this analysis are freely available from the University of California, Irvine Machine Learning Repository at http://archive.ics.uci.edu/ml/. This dataset was created to predict the onset of diabetes in women from the Pima Indian Tribe, containing 768 observations of nine features. The features, as they appear in the dataset, are as follows:
+
+Feature Description  | Feature Name in Dataset
+------------- | -------------
+Number of times pregnant | timesPregnant
+Plasma glucose concentration at 2 hours in an oral glucose tolerance test | plasmaGlucose
+Diastolic blood pressure (mm Hg) | diastolicPressure
+Triceps skin fold thickness (mm) | tricepThickness
+2-Hour serum insulin (mu U/ml) | serumInsulin
+Body mass index (weight in kg/(height in m)^2) | bmi
+Diabetes pedigree function | pedigreeFunction
+Age (years) | age
+Class variable (diabetic or not diabetic) | diabetes
+
+A comprehensive description of this dataset is available at: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2245318/
+
+### 1.2 Software Used in Analysis
+
+All analyses were performed using the R statistical computing environment, with extended functionality provided by the following software libraries: `caret`, `mice`, `randomForest`, `kernlab`, `VIM`, and `RSNNS`. These libraries support data imputation and the three machine learning algorithms used in this analysis.
+
+The analysis was conducted within the RStudio integrated development environment, and this report was generated using the `rmarkdown` library.
+
+### 1.3 Outline of Analysis
+
+The analysis workflow included data loading, exploratory analysis, missing data imputation, data standardization, splitting data into training and test sets, model construction, parameter optimization, and model evaluation.
+
+## 2. Data Processing
+
+### 2.1 Data Acquisition
+
+The analysis started with importing the data into R and loading the required R packages.
+
+```{r, message=F, warning=F}
+library(caret)
+library(mice)
+library(randomForest)
+library(kernlab)
+library(RSNNS)
+library(VIM)
+
+#Create a vector of the feature names
+headers <- c("timesPregnant", "plasmaGlucose", "diastolicPressure", "tricepThickness",
+             "serumInsulin", "bmi", "pedigreeFunction", "age", "diabetes")
+
+#Import data
+#www <- paste0("http://archive.ics.uci.edu/ml/machine-learning-databases/",
+              #"pima-indians-diabetes/pima-indians-diabetes.data")
+library(readr)
+data <-  read_csv("diabetes.csv")
+
+colnames(data) <- c("timesPregnant", "plasmaGlucose", "diastolicPressure", "tricepThickness",
+             "serumInsulin", "bmi", "pedigreeFunction", "age", "diabetes")
+```
+
+The data structure was examined to ensure correct import.
+
+```{r}
+str(data)
+```
+
+Subsequently, we encoded the class label of the `diabetes` feature as 'notDiabetic' for 0 and 'Diabetic' for 1, converting it into a factor.
+
+```{r}
+data$diabetes <- as.factor(ifelse(data$diabetes == 0, "notDiabetic", "Diabetic"))
+```
+
+### 2.2 Exploratory Analysis
+
+Following data import, an exploratory analysis was conducted, starting with the creation of a scatterplot matrix.
+
+```{r}
+pairs(data)
+```
+
+The scatterplot matrix revealed several features with 0-valued observations.
+
+### 2.3 Missing Data
+
+The exploratory analysis highlighted features with 0-valued observations. For certain features, a 0 value is biologically implausible, particularly in `plasmaGlucose`, `diastolicPressure`, `tricepThickness`, `serumInsulin`, and `bmi`. Although the dataset did not explicitly contain missing values, these implicit missing values encoded as 0s were explicitly encoded as `NA`.
+
+```{r}
+for (i in 2:6) {
+  for (n in 1:nrow(data)) {
+    if (data[n, i] == 0) {
+      data[n, i] <- NA
+    }
+  }
+}
+```
+
+An aggregation plot was then constructed to count the number of missing values.
+
+```{r}
+aggr(data[, 2:6], cex.lab = 1, cex.axis = .5, numbers = TRUE, gap = 0)
+```
+
+The left plot displayed the proportion of missing values to total observations for each feature, showing that over half of all `serumInsulin` and nearly a third of `tricepThickness` observations were missing.
+
+The right plot indicated that only slightly over half of the observations were complete. Due to the significant number of observations with missing values, it was decided not to remove them from the analysis. Instead, missing values were imputed using Imputation by Predicted Mean Matching, a method that imputes missing values by finding the nearest-neighbor donor based on the expected values of the missing variables conditional on the observed covariates.
+
+Imputation by Predicted Mean Matching was chosen for its capability to provide valid inference when data are missing at random, an assumption tested by examining relationships between variables and missing values through a scatterplot matrix.
+
+```{r}
+scattmatrixMiss(data)
+```
+
+No discernible relationship between variables and missing values was observed, validating the assumption of data missing at random. Imputation by Predicted Mean Matching was then applied.
+
+```{r, message = FALSE, warning = FALSE}
+tempdata <- mice(data, m = 3, method = 'pmm', seed = 100)
+data <- complete(tempdata)
+```
+
+Distributions of the imputed data were compared to the original data.
+
+```{r}
+densityplot(tempdata)
+```
+
+The distributions were found to be approximately equal, allowing for the continuation of feature selection.
+
+### 2.4 Feature Selection
+
+To ensure
+
+ that no two features were highly correlated, a correlation matrix was constructed. Features with a correlation coefficient greater than 0.7 were considered for removal.
+
+```{r}
+correlationMatrix <- cor(data[, 1:8])
+findCorrelation(correlationMatrix, cutoff = 0.7)
+```
+
+As no two features exhibited such high correlation, it was determined that no features needed to be eliminated from the analysis.
+
+### 2.5 Data Standardization
+
+Since the features in the dataset represented different units, data standardization was performed by adjusting the mean of each column to 0 and the standard deviation to 1.
+
+```{r}
+data[, 1:8] <- scale(data[, 1:8], center = TRUE, scale = TRUE)
+```
+
+## 3. Training the Algorithms
+
+With data processing complete, the analysis proceeded to model construction. Models for each of the three methods were built using a training set of observations with 10-fold cross-validation to prevent overfitting, facilitated by the `caret` package.
+
+```{r}
+tenFoldCV <- trainControl(method = "repeatedcv",
+                          number = 10,
+                          repeats = 10,
+                          classProbs = TRUE,
+                          summaryFunction = twoClassSummary)
+```
+
+The best model for each method was selected based on the area under the ROC curve (AUC), representing model accuracy. A high AUC score, close to 1, indicated high accuracy.
+
+### 3.1 Predicting the Most Common Label
+
+Of the 768 observations, approximately 65% were labeled 'notDiabetic,' and the remaining 35% were labeled 'Diabetic.' Predicting 'notDiabetic' for every instance would already achieve 65% accuracy. Therefore, any model needed to exceed this accuracy threshold to be considered viable.
+
+### 3.2 Training and Test Sets
+
+Seventy percent of the observations were used to train the models, while the remaining 30% were reserved for testing.
+
+```{r}
+sampleSize <- floor(.7 * nrow(data))
+
+set.seed(131)
+trainIndices <- sample(seq_len(nrow(data)), size = sampleSize)
+
+x.train <- data[trainIndices, 1:8]
+y.train <- data[trainIndices, 9]
+
+x.test <- data[-trainIndices, 1:8]
+y.test <- data[-trainIndices, 9]
+```
+
+### 3.3 Random Forest
+
+Random Forest, a tree-based classification method, was employed in the analysis. It randomly selected a subset of predictor variables as split candidates at each tree node. Models were trained for different random sample sizes (denoted as `mtry`).
+
+```{r}
+rf.expand <- expand.grid(mtry = 2:8)
+
+set.seed(100)
+rf <- caret::train(x.train,
+                   y.train,
+                   method = "rf",
+                   metric = "ROC",
+                   trControl = tenFoldCV,
+                   tuneGrid = rf.expand)
+
+rf
+```
+
+The best model was achieved when considering only 2 randomly chosen predictors. The importance of variables was visualized.
+
+```{r}
+varImpPlot(rf$finalModel, type = 2, main = "Random Forest")
+```
+
+The plot listed the importance of each variable to the model, indicating that all variables appeared significant, and no feature elimination or retraining was required. Thus, the Random Forest model with `mtry = 2` was chosen as the final model.
+
+### 3.4 Support Vector Machine
+
+The Support Vector Machine (SVM) aimed to linearly separate observations based on class labels. A linear kernel was initially employed, and models were trained with different cost (C) values.
+
+```{r}
+linear.svm.expand <- expand.grid(C = c(.1, 1, 10))
+set.seed(131)
+linear.svm <- caret::train(x.train,
+                           y.train,
+                           method = "svmLinear",
+                           metric = "ROC",
+                           trControl = tenFoldCV,
+                           tuneLength = 10,
+                           tuneGrid = linear.svm.expand)
+linear.svm
+```
+
+After finding that `C = 0.1` produced the best model, a narrower search was conducted.
+
+```{r}
+linear.svm.expand2 <- expand.grid(C = c(.05, .1, .15))
+set.seed(131)
+linear.svm2 <- caret::train(x.train,
+                            y.train,
+                            method = "svmLinear",
+                            metric = "ROC",
+                            trControl = tenFoldCV,
+                            tuneGrid = linear.svm.expand2)
+linear.svm2
+```
+
+The final model with an AUC of 0.891 was achieved with `C = 0.05`. Subsequently, a Support Vector Machine with a radial basis function kernel was constructed for comparison.
+
+```{r}
+radial.svm.expand <- expand.grid(sigma = c(.2, .4, .6, .8),
+                                 C = c(.1, 1, 5, 10, 100))
+set.seed(131)
+radial.svm <- caret::train(x.train,
+                           y.train,
+                           method = "svmRadial",
+                           metric = "ROC",
+                           trControl = tenFoldCV,
+                           tuneGrid = radial.svm.expand)
+radial.svm
+```
+
+A narrower search was conducted around `sigma = 0.2` and `C = 0.1`.
+
+```{r}
+radial.svm.expand2 <- expand.grid(sigma = c(.15, .2, .25),
+                                 C = c(.01, .05, .1, .15, .25))
+set.seed(131)
+radial.svm2 <- caret::train(x.train,
+                            y.train,
+                            method = "svmRadial",
+                            metric = "ROC",
+                            trControl = tenFoldCV,
+                            tuneGrid = radial.svm.expand2)
+radial.svm2
+```
+
+The final SVM model with the radial basis function kernel achieved an AUC of 0.864 with `sigma = 0.15` and `C = 0.01`. As this AUC was lower than that of the linear kernel, the SVM model with the linear kernel and `C = 0.05` was chosen as the final Support Vector Machine model.
+
+### 3.5 Multilayer Perceptron Artificial Neural Network
+
+The Multilayer Perceptron Artificial Neural Network (MLP ANN) processes data through layers of artificial neurons, each weighting inputs to reach a final decision. Models with varying numbers of hidden layers were trained.
+
+```{r}
+set.seed(131)
+mlpnn <- caret::train(x.train,
+                      y.train,
+                      method = "mlpML",
+                      metric = "ROC",
+                      trControl = tenFoldCV)
+
+mlpnn
+```
+
+The best performance was achieved with a single hidden layer, making it the final model for this method.
+
+## 4. Selecting the Best Overall Model
+
+Three final models were obtained, one for each method. The model with the highest classification accuracy on the test set was chosen as the best model for this problem.
+
+```{r}
+# Random Forest Test Accuracy44
+rf.predict <- predict(rf$finalModel, x.test)
+rf.test.accuracy <- mean(rf.predict == y.test)
+rf.test.accuracy
+
+# SVM Test Accuracy
+svm.predict <- predict(linear.svm2$finalModel, x.test)
+svm.test.accuracy <- mean(svm.predict == y.test)
+
+
+svm.test.accuracy
+
+# MLPNN Test Accuracy
+mlpnn.predict <- predict(mlpnn$finalModel, x.test)
+mlpnn.predict <- as.data.frame(mlpnn.predict)
+mlpnn.predict$prediction <- ifelse(mlpnn.predict$V1 >= .5, "Diabetic", "notDiabetic")
+mlpnn.test.accuracy <- mean(mlpnn.predict$prediction == y.test)
+mlpnn.test.accuracy
+```
+
+The Random Forest achieved the highest classification accuracy on the test set, making it the best model for this problem.
+
+## 5. Conclusion
+
+Despite a small and incomplete training set, data mining demonstrated its viability for diabetes diagnosis in Pima Indian women. Of the three algorithms tested, all surpassed the minimum viable accuracy rate. The Random Forest algorithm outperformed the others and was selected as the best model. Further improvements are expected with more data free of missing values. Despite these challenges, machine learning proved to be a valuable addition to the medical industry.
+
+## 6. References
+
+(1) [Diabetes Incidence in Pima Indians](http://diabetes.diabetesjournals.org/content/53/5/1181)
+
+(2) [Semicontinuous Longitudinal Data](http://www.stefvanbuuren.nl/publications/2014%20Semicontinuous%20-%20Stat%20Neerl.pdf)
+
+(3) [Missing Not at Random Data](http://bmcmedresmethodol.biomedcentral.com/articles/10.1186/1471-2288-14-75)
+
+(4) James et al., "Introduction to Statistical Learning"
+
+(5) [Random Forest Variable Importance](https://dinsdalelab.sdsu.edu/metag.stats/code/randomforest.html)
+
+(6) [Multilayer Perceptron](http://www.doc.ic.ac.uk/~sgc/teaching/pre2012/v231/lecture13.html)
+
+**Software:**
+- [R Project](https://www.r-project.org/)
+- [RStudio](https://www.rstudio.com)
+- [caret Package](https://cran.r-project.org/web/packages/caret/index.html)
+- [mice Package](https://cran.r-project.org/web/packages/mice/mice.pdf)
+- [randomForest Package](https://cran.r-project.org/web/packages/randomForest/randomForest.pdf)
+- [kernlab Package](https://cran.r-project.org/web/packages/kernlab/kernlab.pdf)
+- [RSNNS Package](https://cran.r-project.org/web/packages/RSNNS/RSNNS.pdf)
+- [VIM Package](https://cran.r-project.org/web/packages/VIM/index.html)
