@@ -1,4 +1,4 @@
-# Using-Machine-Learning-to-Diagnose-Diabetes
+# Using Machine Learning to Diagnose Diabetes
 
 ## 0. Abstract
 Diabetes is more prevalent among the Pima Indian tribe of southern Arizona than any other population globally(1). This paper demonstrates the accurate diagnosis of diabetes in Pima women by optimizing parameters for three machine learning algorithms: Random Forest decision trees, a Support Vector Machine (SVM), and a Multilayer Perceptron (MLP) artificial neural network (ANN). These results underscore the potential of machine learning as a valuable tool for assisting doctors in disease diagnosis.
